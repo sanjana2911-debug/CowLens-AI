@@ -2,12 +2,11 @@ const Diagnosis = require('../models/Diagnosis');
 const Cow = require('../models/Cow');
 const Notification = require('../models/Notification');
 const { analyzeSymptoms } = require('../services/groqService');
+const { detectDiseases } = require('../services/yoloService');
+const cloudinary = require('cloudinary').v2;
+const fs = require('fs');
+const path = require('path');
 
-/**
- * @desc    Get all diagnoses for a cow
- * @route   GET /api/cows/:cowId/diagnoses
- * @access  Private
- */
 const getDiagnoses = async (req, res, next) => {
   try {
     const cow = await Cow.findOne({ _id: req.params.cowId, user: req.user._id });
@@ -33,11 +32,6 @@ const getDiagnoses = async (req, res, next) => {
   }
 };
 
-/**
- * @desc    Get single diagnosis
- * @route   GET /api/diagnoses/:id
- * @access  Private
- */
 const getDiagnosis = async (req, res, next) => {
   try {
     const diagnosis = await Diagnosis.findOne({
@@ -59,11 +53,6 @@ const getDiagnosis = async (req, res, next) => {
   }
 };
 
-/**
- * @desc    Create a diagnosis
- * @route   POST /api/cows/:cowId/diagnoses
- * @access  Private
- */
 const createDiagnosis = async (req, res, next) => {
   try {
     const cow = await Cow.findOne({ _id: req.params.cowId, user: req.user._id });
@@ -77,7 +66,6 @@ const createDiagnosis = async (req, res, next) => {
 
     const diagnosis = await Diagnosis.create(req.body);
 
-    // Update cow health status based on diagnosis severity
     const severityMap = {
       mild: 'under_treatment',
       moderate: 'sick',
@@ -89,7 +77,6 @@ const createDiagnosis = async (req, res, next) => {
       await cow.save();
     }
 
-    // Create notification for health alert
     if (['moderate', 'severe', 'critical'].includes(diagnosis.severity)) {
       await Notification.create({
         user: req.user._id,
@@ -109,11 +96,6 @@ const createDiagnosis = async (req, res, next) => {
   }
 };
 
-/**
- * @desc    Update a diagnosis
- * @route   PUT /api/diagnoses/:id
- * @access  Private
- */
 const updateDiagnosis = async (req, res, next) => {
   try {
     let diagnosis = await Diagnosis.findOne({
@@ -126,7 +108,6 @@ const updateDiagnosis = async (req, res, next) => {
       throw new Error('Diagnosis not found');
     }
 
-    // If resolving, set resolved date
     if (req.body.status === 'resolved' && !diagnosis.resolvedDate) {
       req.body.resolvedDate = new Date();
     }
@@ -136,7 +117,6 @@ const updateDiagnosis = async (req, res, next) => {
       runValidators: true,
     });
 
-    // If resolved, update cow health status
     if (req.body.status === 'resolved') {
       await Cow.findByIdAndUpdate(diagnosis.cow, { healthStatus: 'recovering' });
     }
@@ -147,11 +127,6 @@ const updateDiagnosis = async (req, res, next) => {
   }
 };
 
-/**
- * @desc    Delete a diagnosis
- * @route   DELETE /api/diagnoses/:id
- * @access  Private
- */
 const deleteDiagnosis = async (req, res, next) => {
   try {
     const diagnosis = await Diagnosis.findOne({
@@ -172,11 +147,6 @@ const deleteDiagnosis = async (req, res, next) => {
   }
 };
 
-/**
- * @desc    AI-powered symptom analysis using Groq API
- * @route   POST /api/diagnoses/ai-analyze
- * @access  Private
- */
 const aiAnalyzeSymptoms = async (req, res, next) => {
   try {
     const { symptoms, cowId } = req.body;
@@ -190,7 +160,6 @@ const aiAnalyzeSymptoms = async (req, res, next) => {
     let healthRecords = [];
     let vaccinations = [];
 
-    // If cowId is provided, fetch cow data and related records
     if (cowId) {
       cow = await Cow.findOne({ _id: cowId, user: req.user._id });
       if (!cow) {
@@ -198,14 +167,12 @@ const aiAnalyzeSymptoms = async (req, res, next) => {
         throw new Error('Cow not found');
       }
 
-      // Fetch recent health records
       const HealthRecord = require('../models/HealthRecord');
       healthRecords = await HealthRecord.find({ cow: cowId, user: req.user._id })
         .sort('-date')
         .limit(3)
         .lean();
 
-      // Fetch recent vaccinations
       const Vaccination = require('../models/Vaccination');
       vaccinations = await Vaccination.find({ cow: cowId, user: req.user._id })
         .sort('-dateGiven')
@@ -213,10 +180,8 @@ const aiAnalyzeSymptoms = async (req, res, next) => {
         .lean();
     }
 
-    // Call Gemini AI service
     const analysis = await analyzeSymptoms(cow, symptoms.trim(), healthRecords, vaccinations);
 
-    // Save diagnosis to database if cow is selected
     let savedDiagnosis = null;
     if (cow) {
       const topDisease = analysis.data.possibleDiseases[0];
@@ -247,14 +212,12 @@ const aiAnalyzeSymptoms = async (req, res, next) => {
         rawResponse: JSON.stringify(analysis.data),
       });
 
-      // Update cow health status
       if (severityMap[topDisease.severity]) {
         cow.healthStatus = severityMap[topDisease.severity];
         cow.healthScore = analysis.data.healthScore;
         await cow.save();
       }
 
-      // Create notification for health alert
       if (['high', 'critical'].includes(topDisease.severity)) {
         await Notification.create({
           user: req.user._id,
@@ -281,6 +244,156 @@ const aiAnalyzeSymptoms = async (req, res, next) => {
   }
 };
 
+const aiDetectImage = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      res.status(400);
+      throw new Error('Please upload a cow image');
+    }
+
+    const { symptoms, cowId } = req.body;
+    const imagePath = req.file.path;
+
+    const yoloResult = await detectDiseases(imagePath, req.file.originalname);
+
+    let combinedAnalysis = null;
+    if (symptoms && symptoms.trim()) {
+      let cow = null;
+      let healthRecords = [];
+      let vaccinations = [];
+
+      if (cowId) {
+        cow = await Cow.findOne({ _id: cowId, user: req.user._id });
+        if (cow) {
+          const HealthRecord = require('../models/HealthRecord');
+          const Vaccination = require('../models/Vaccination');
+          healthRecords = await HealthRecord.find({ cow: cowId, user: req.user._id })
+            .sort('-date')
+            .limit(3)
+            .lean();
+          vaccinations = await Vaccination.find({ cow: cowId, user: req.user._id })
+            .sort('-dateGiven')
+            .limit(5)
+            .lean();
+        }
+      }
+
+      const yoloFindings = yoloResult.detectedDiseases.length > 0
+        ? `\n\nIMAGE ANALYSIS FINDINGS (Roboflow detected):\nDetected conditions: ${yoloResult.detectedDiseases.join(', ')}\nConfidence: ${yoloResult.confidence}%\n\nPlease incorporate these visual findings into your diagnosis.`
+        : '\n\nIMAGE ANALYSIS: No specific disease patterns detected in the image. The cow appears visually normal.';
+
+      const enhancedSymptoms = `${symptoms.trim()}${yoloFindings}`;
+      const analysis = await analyzeSymptoms(cow, enhancedSymptoms, healthRecords, vaccinations);
+
+      let savedDiagnosis = null;
+      if (cow && analysis.data.possibleDiseases?.length > 0) {
+        const topDisease = analysis.data.possibleDiseases[0];
+        const severityMap = {
+          low: 'under_treatment',
+          medium: 'sick',
+          high: 'sick',
+          critical: 'critical',
+        };
+
+        savedDiagnosis = await Diagnosis.create({
+          cow: cow._id,
+          user: req.user._id,
+          source: 'ai',
+          condition: topDisease.disease,
+          category: topDisease.category,
+          severity: topDisease.severity,
+          symptoms: enhancedSymptoms,
+          confidenceScore: topDisease.probability,
+          healthScore: analysis.data.healthScore,
+          status: 'suspected',
+          treatment: analysis.data.recommendedTreatment,
+          likelyCauses: analysis.data.likelyCauses,
+          preventionTips: analysis.data.preventionTips,
+          requiresVetAttention: analysis.data.requiresVetAttention,
+          disclaimer: analysis.data.disclaimer || 'This is an AI-assisted assessment generated by Groq with Roboflow image analysis. Always consult a licensed veterinarian.',
+          conditionsCount: analysis.data.possibleDiseases.length,
+          rawResponse: JSON.stringify(analysis.data),
+          imageAnalysis: {
+            imageUrl: yoloResult.annotatedImageUrl || '',
+            findings: yoloResult.detectedDiseases.join(', ') || 'No visual findings',
+            detectedConditions: yoloResult.detectedDiseases,
+          },
+        });
+
+        if (severityMap[topDisease.severity]) {
+          cow.healthStatus = severityMap[topDisease.severity];
+          cow.healthScore = analysis.data.healthScore;
+          await cow.save();
+        }
+
+        if (['high', 'critical'].includes(topDisease.severity)) {
+          await Notification.create({
+            user: req.user._id,
+            type: 'health_alert',
+            title: `Health Alert: ${topDisease.disease}`,
+            message: `${cow.name || `Cow #${cow.tagNumber}`} diagnosed with ${topDisease.disease} (Roboflow + symptom analysis)`,
+            relatedCow: cow._id,
+            relatedDiagnosis: savedDiagnosis._id,
+            severity: topDisease.severity === 'critical' ? 'critical' : 'warning',
+            actionLink: `/cow-details/${cow._id}`,
+          });
+        }
+      }
+
+      combinedAnalysis = {
+        ...analysis.data,
+        yoloDetection: {
+          detectedDiseases: yoloResult.detectedDiseases,
+          detections: yoloResult.detections,
+          confidence: yoloResult.confidence,
+          boundingBoxes: yoloResult.boundingBoxes,
+          annotatedImageUrl: yoloResult.annotatedImageUrl,
+        },
+        diagnosisId: savedDiagnosis?._id || null,
+      };
+    }
+
+    try {
+      fs.unlinkSync(imagePath);
+    } catch (cleanupError) {
+      console.warn('Failed to clean up uploaded file:', cleanupError.message);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        yoloDetection: {
+          detectedDiseases: yoloResult.detectedDiseases,
+          detections: yoloResult.detections,
+          confidence: yoloResult.confidence,
+          boundingBoxes: yoloResult.boundingBoxes,
+          annotatedImageUrl: yoloResult.annotatedImageUrl,
+          imageWidth: yoloResult.imageWidth,
+          imageHeight: yoloResult.imageHeight,
+          totalDetections: yoloResult.totalDetections,
+        },
+        combinedAnalysis,
+      },
+    });
+  } catch (error) {
+    if (req.file && req.file.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Image analysis failed',
+      code: error.code || 'UNKNOWN_ERROR',
+      details: error.response?.data || null,
+      stack: process.env.NODE_ENV === 'production' ? null : error.stack,
+    });
+  }
+};
+
 module.exports = {
   getDiagnoses,
   getDiagnosis,
@@ -288,4 +401,5 @@ module.exports = {
   updateDiagnosis,
   deleteDiagnosis,
   aiAnalyzeSymptoms,
+  aiDetectImage,
 };

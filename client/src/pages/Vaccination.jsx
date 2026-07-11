@@ -56,7 +56,7 @@ const Vaccination = () => {
         cost: formData.cost ? Number(formData.cost) : undefined,
       };
       const res = await vaccinationAPI.create(cowId, data);
-      setRecords([res.data.data, ...records]);
+      setRecords((currentRecords) => [res.data.data, ...currentRecords]);
       setShowForm(false);
       setFormData({
         vaccineName: '',

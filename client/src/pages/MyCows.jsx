@@ -27,7 +27,7 @@ const MyCows = () => {
     if (!window.confirm('Are you sure you want to delete this cow?')) return;
     try {
       await cowsAPI.delete(id);
-      setCows(cows.filter((c) => c._id !== id));
+      setCows((currentCows) => currentCows.filter((c) => c._id !== id));
     } catch (err) {
       console.error('Delete failed:', err);
     }

@@ -16,6 +16,7 @@ const CowPassport = () => {
   const [vaccinations, setVaccinations] = useState([]);
   const [diagnoses, setDiagnoses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [qrCodeUrl, setQrCodeUrl] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -39,6 +40,14 @@ const CowPassport = () => {
     fetchData();
   }, [id]);
 
+  useEffect(() => {
+    if (cow?._id) {
+      // Generate QR code pointing to public passport page
+      const passportUrl = `${window.location.origin}/passport/${cow._id}`;
+      setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(passportUrl)}`);
+    }
+  }, [cow]);
+
   if (loading) return <Loading />;
   if (!cow) {
     return (
@@ -61,11 +70,15 @@ const CowPassport = () => {
         </div>
       </div>
 
-      {/* QR Code Placeholder */}
+      {/* QR Code */}
       <div className="card flex items-center gap-4">
-        <div className="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center">
-          <HiOutlineQrCode className="w-10 h-10 text-gray-400" />
-        </div>
+        {qrCodeUrl ? (
+          <img src={qrCodeUrl} alt="QR Code" className="w-20 h-20 rounded-lg" />
+        ) : (
+          <div className="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center">
+            <HiOutlineQrCode className="w-10 h-10 text-gray-400" />
+          </div>
+        )}
         <div>
           <h2 className="font-semibold text-gray-900">QR Health Passport</h2>
           <p className="text-sm text-gray-500">Scan to view this cow's complete health history</p>

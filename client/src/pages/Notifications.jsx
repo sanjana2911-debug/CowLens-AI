@@ -47,10 +47,10 @@ const Notifications = () => {
   const handleMarkAsRead = async (id) => {
     try {
       await notificationAPI.markAsRead(id);
-      setNotifications(
-        notifications.map((n) => (n._id === id ? { ...n, isRead: true } : n))
+      setNotifications((currentNotifications) =>
+        currentNotifications.map((n) => (n._id === id ? { ...n, isRead: true } : n))
       );
-      setUnreadCount(Math.max(0, unreadCount - 1));
+      setUnreadCount((currentCount) => Math.max(0, currentCount - 1));
     } catch (err) {
       console.error('Failed to mark as read:', err);
     }
@@ -59,7 +59,7 @@ const Notifications = () => {
   const handleMarkAllAsRead = async () => {
     try {
       await notificationAPI.markAllAsRead();
-      setNotifications(notifications.map((n) => ({ ...n, isRead: true })));
+      setNotifications((currentNotifications) => currentNotifications.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);
     } catch (err) {
       console.error('Failed to mark all as read:', err);
@@ -69,11 +69,11 @@ const Notifications = () => {
   const handleDelete = async (id) => {
     try {
       await notificationAPI.delete(id);
-      setNotifications(notifications.filter((n) => n._id !== id));
-      const deleted = notifications.find((n) => n._id === id);
-      if (deleted && !deleted.isRead) {
-        setUnreadCount(Math.max(0, unreadCount - 1));
-      }
+      setNotifications((currentNotifications) => currentNotifications.filter((n) => n._id !== id));
+      setUnreadCount((currentCount) => {
+        const deleted = notifications.find((n) => n._id === id);
+        return deleted && !deleted.isRead ? Math.max(0, currentCount - 1) : currentCount;
+      });
     } catch (err) {
       console.error('Failed to delete:', err);
     }

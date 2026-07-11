@@ -1,26 +1,35 @@
+import { Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import DashboardLayout from '../layouts/DashboardLayout';
-import Landing from '../pages/Landing';
-import Login from '../pages/Login';
-import Register from '../pages/Register';
-import CowPassport from '../pages/CowPassport';
-import Dashboard from '../pages/Dashboard';
-import MyCows from '../pages/MyCows';
-import AddCow from '../pages/AddCow';
-import CowDetails from '../pages/CowDetails';
-import HealthRecords from '../pages/HealthRecords';
-import Vaccination from '../pages/Vaccination';
-import AIDiagnosis from '../pages/AIDiagnosis';
-import Notifications from '../pages/Notifications';
-import Profile from '../pages/Profile';
-import Settings from '../pages/Settings';
-import NearbyVets from '../pages/NearbyVets';
-import NotFound from '../pages/NotFound';
+import Loading from '../components/Loading';
 import ProtectedRoute from './ProtectedRoute';
+
+const Landing = lazy(() => import('../pages/Landing'));
+const Login = lazy(() => import('../pages/Login'));
+const Register = lazy(() => import('../pages/Register'));
+const CowPassport = lazy(() => import('../pages/CowPassport'));
+const Dashboard = lazy(() => import('../pages/Dashboard'));
+const MyCows = lazy(() => import('../pages/MyCows'));
+const AddCow = lazy(() => import('../pages/AddCow'));
+const CowDetails = lazy(() => import('../pages/CowDetails'));
+const HealthRecords = lazy(() => import('../pages/HealthRecords'));
+const Vaccination = lazy(() => import('../pages/Vaccination'));
+const AIDiagnosis = lazy(() => import('../pages/AIDiagnosis'));
+const Notifications = lazy(() => import('../pages/Notifications'));
+const Profile = lazy(() => import('../pages/Profile'));
+const Settings = lazy(() => import('../pages/Settings'));
+const NearbyVets = lazy(() => import('../pages/NearbyVets'));
+const AnalyticsDashboard = lazy(() => import('../pages/AnalyticsDashboard'));
+const MilkProduction = lazy(() => import('../pages/MilkProduction'));
+const AIChatAssistant = lazy(() => import('../pages/AIChatAssistant'));
+const PDFHealthReport = lazy(() => import('../pages/PDFHealthReport'));
+const VaccinationReminder = lazy(() => import('../pages/VaccinationReminder'));
+const NotFound = lazy(() => import('../pages/NotFound'));
 
 const AppRoutes = () => {
   return (
-    <Routes>
+    <Suspense fallback={<Loading fullScreen />}>
+      <Routes>
       {/* Public Routes */}
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
@@ -35,8 +44,15 @@ const AppRoutes = () => {
           <Route path="/add-cow" element={<AddCow />} />
           <Route path="/cow-details/:id" element={<CowDetails />} />
           <Route path="/health-records/:cowId" element={<HealthRecords />} />
+          <Route path="/health-records" element={<HealthRecords />} />
           <Route path="/vaccination/:cowId" element={<Vaccination />} />
+          <Route path="/vaccination" element={<VaccinationReminder />} />
           <Route path="/ai-diagnosis" element={<AIDiagnosis />} />
+          <Route path="/analytics" element={<AnalyticsDashboard />} />
+          <Route path="/milk-production" element={<MilkProduction />} />
+          <Route path="/ai-chat" element={<AIChatAssistant />} />
+          <Route path="/pdf-report" element={<PDFHealthReport />} />
+          <Route path="/cow-passport" element={<CowPassport />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/settings" element={<Settings />} />
@@ -47,6 +63,7 @@ const AppRoutes = () => {
       {/* 404 */}
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </Suspense>
   );
 };
 

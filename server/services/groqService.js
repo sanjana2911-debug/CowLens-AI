@@ -97,6 +97,30 @@ RULES:
 /**
  * Analyze cow symptoms using Groq API
  */
+const parseGroqResponse = (responseText) => {
+  if (!responseText) {
+    throw new Error('Empty response from Groq API');
+  }
+
+  const cleaned = responseText
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```$/i, '');
+
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  const jsonCandidate = firstBrace >= 0 && lastBrace > firstBrace
+    ? cleaned.slice(firstBrace, lastBrace + 1)
+    : cleaned;
+
+  const parsedData = JSON.parse(jsonCandidate);
+  if (!parsedData.possibleDiseases || !Array.isArray(parsedData.possibleDiseases)) {
+    throw new Error('Invalid response structure from Groq API: missing possibleDiseases');
+  }
+
+  return parsedData;
+};
+
 const analyzeSymptoms = async (cow, symptoms, healthRecords = [], vaccinations = []) => {
   try {
     if (!process.env.GROQ_API_KEY) {
@@ -106,7 +130,6 @@ const analyzeSymptoms = async (cow, symptoms, healthRecords = [], vaccinations =
     const prompt = buildVeterinaryPrompt(cow, symptoms, healthRecords, vaccinations);
     const groq = getGroqClient();
 
-    // Call Groq API with structured JSON mode and llama-3.1-8b-instant or mixtral-8x7b-32768
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         {
@@ -120,16 +143,7 @@ const analyzeSymptoms = async (cow, symptoms, healthRecords = [], vaccinations =
     });
 
     const responseText = chatCompletion.choices[0]?.message?.content;
-    if (!responseText) {
-      throw new Error('Empty response from Groq API');
-    }
-
-    const parsedData = JSON.parse(responseText);
-
-    // Validate the response data
-    if (!parsedData.possibleDiseases || !Array.isArray(parsedData.possibleDiseases)) {
-      throw new Error('Invalid response structure from Groq API: missing possibleDiseases');
-    }
+    const parsedData = parseGroqResponse(responseText);
 
     return {
       success: true,

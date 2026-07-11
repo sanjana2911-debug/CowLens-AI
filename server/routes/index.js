@@ -28,6 +28,7 @@ const {
   updateDiagnosis,
   deleteDiagnosis,
   aiAnalyzeSymptoms,
+  aiDetectImage,
 } = require('../controllers/diagnosisController');
 const {
   getNotifications,
@@ -37,6 +38,7 @@ const {
   getUnreadCount,
 } = require('../controllers/notificationController');
 const { protect } = require('../middleware/auth');
+const upload = require('../middleware/upload');
 const {
   createHealthRecordValidation,
   createVaccinationValidation,
@@ -64,6 +66,9 @@ router.post('/cows/:cowId/diagnoses', protect, createDiagnosisValidation, create
 
 // AI diagnosis analysis endpoint
 router.post('/diagnoses/ai-analyze', protect, aiAnalyzeSymptoms);
+
+// YOLO image-based disease detection endpoint
+router.post('/diagnoses/ai-detect-image', protect, upload.single('image'), aiDetectImage);
 
 // Direct health routes
 router.get('/health/:id', protect, getHealthRecord);
