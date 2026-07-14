@@ -1,5 +1,5 @@
 """
-YOLOv11 inference module for cow disease detection.
+YOLOv11 inference module for cow disease detection and cow presence detection.
 Handles model loading, prediction, and annotation.
 """
 import os
@@ -31,6 +31,9 @@ DISEASE_CLASSES = {
     11: "Parasitic_Infestation",
     12: "Healthy",
 }
+
+# Minimum confidence for cow presence verification (60% to accept real cows)
+COW_VERIFICATION_CONFIDENCE = 0.60
 
 # Confidence threshold for detections
 CONFIDENCE_THRESHOLD = 0.25
@@ -156,6 +159,110 @@ def predict_diseases(model, image_bytes: bytes):
 
     except Exception as e:
         logger.error(f"Prediction error: {e}")
+        raise
+
+
+def detect_cow_in_image(model, image_bytes: bytes):
+    """
+    Run YOLOv11 inference to check if a cow is present in the image.
+    Accepts a detection as "cow" only when:
+      - The class name (from model.names) matches exactly "cow"
+      - Confidence >= 60%
+    Logs every detected COCO class name, id, and confidence for debugging.
+    
+    Returns:
+        dict with:
+            - is_cow: bool
+            - confidence: float (highest confidence among accepted cow detections)
+            - detections: list of cow detection dicts
+    """
+    try:
+        # Convert bytes to numpy array
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if img is None:
+            raise ValueError("Failed to decode image")
+
+        # Get model's COCO class names (e.g. {0: 'person', 1: 'bicycle', ..., 19: 'cow', ...})
+        class_names = model.names if hasattr(model, 'names') and model.names else {}
+
+        # Run inference with standard COCO names
+        results = model(
+            img,
+            conf=CONFIDENCE_THRESHOLD,
+            iou=IOU_THRESHOLD,
+            verbose=False,
+        )
+
+        all_detections_log = []
+        cow_detections = []
+
+        for result in results:
+            boxes = result.boxes
+            if boxes is not None and len(boxes) > 0:
+                for i in range(len(boxes)):
+                    class_id = int(boxes.cls[i])
+                    confidence = float(boxes.conf[i])
+                    class_name = class_names.get(class_id, f"class_{class_id}")
+                    
+                    # Log every detected class for debugging
+                    all_detections_log.append({
+                        "class": class_name,
+                        "class_id": class_id,
+                        "confidence": round(confidence * 100, 2),
+                    })
+                    
+                    # Accept only if class name is exactly "cow" and confidence >= 60%
+                    if class_name != "cow":
+                        continue
+                    
+                    if confidence < COW_VERIFICATION_CONFIDENCE:
+                        continue
+                    
+                    x1, y1, x2, y2 = boxes.xyxy[i].tolist()
+
+                    cow_detections.append({
+                        "boundingBox": {
+                            "x1": round(x1, 2),
+                            "y1": round(y1, 2),
+                            "x2": round(x2, 2),
+                            "y2": round(y2, 2),
+                            "width": round(x2 - x1, 2),
+                            "height": round(y2 - y1, 2),
+                        },
+                        "confidence": round(confidence * 100, 2),
+                    })
+
+        # Log all detected classes for debugging
+        if all_detections_log:
+            log_lines = ["Cow detection: all detected objects in image:"]
+            for d in all_detections_log:
+                log_lines.append(f"  - class_id={d['class_id']}, name='{d['class']}', confidence={d['confidence']}%")
+            logger.info("\n".join(log_lines))
+        else:
+            logger.info("Cow detection: no objects detected in image")
+
+        # Sort by confidence descending
+        cow_detections.sort(key=lambda x: x["confidence"], reverse=True)
+
+        is_cow = len(cow_detections) > 0
+        top_confidence = cow_detections[0]["confidence"] if cow_detections else 0.0
+
+        logger.info(
+            f"Cow detection result: is_cow={is_cow}, "
+            f"confidence={top_confidence}%, "
+            f"detections_above_threshold={len(cow_detections)}"
+        )
+
+        return {
+            "is_cow": is_cow,
+            "confidence": top_confidence,
+            "detections": cow_detections,
+        }
+
+    except Exception as e:
+        logger.error(f"Cow detection error: {e}")
         raise
 
 

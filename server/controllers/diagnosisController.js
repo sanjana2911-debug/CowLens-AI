@@ -3,6 +3,7 @@ const Cow = require('../models/Cow');
 const Notification = require('../models/Notification');
 const { analyzeSymptoms } = require('../services/groqService');
 const { detectDiseases } = require('../services/yoloService');
+const { detectCattle } = require('../services/roboflowCowService');
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
 const path = require('path');
@@ -244,8 +245,26 @@ const aiAnalyzeSymptoms = async (req, res, next) => {
   }
 };
 
+/**
+ * aiDetectImage — Image-based AI diagnosis pipeline.
+ *
+ * Flow:
+ *   1. Validate uploaded file exists.
+ *   2. Run Roboflow Cattle Detection to verify the image contains a cow.
+ *   3. If NO cow detected → HTTP 400 immediately.
+ *      - Do NOT call disease detection.
+ *      - Do NOT call Groq.
+ *      - Do NOT save to MongoDB.
+ *   4. If cow detected → proceed with existing disease detection pipeline:
+ *      - Roboflow disease classification workflow
+ *      - Groq AI symptom analysis (if symptoms provided)
+ *      - MongoDB Diagnosis save
+ *      - Notification creation (if severe)
+ *      - Return standard response format
+ */
 const aiDetectImage = async (req, res, next) => {
   try {
+    // --- Step 1: Validate uploaded file ---
     if (!req.file) {
       res.status(400);
       throw new Error('Please upload a cow image');
@@ -253,9 +272,41 @@ const aiDetectImage = async (req, res, next) => {
 
     const { symptoms, cowId } = req.body;
     const imagePath = req.file.path;
+    const originalName = req.file.originalname;
 
+    // --- Step 2: Run Roboflow Cattle Detection ---
+    // This is the ONLY gatekeeper. If no cow is detected, reject immediately.
+    console.log(`[CattleCheck] Starting cattle detection for: ${originalName}`);
+    const cattleDetection = await detectCattle(imagePath);
+
+    console.log(`[CattleCheck] Result: isCow=${cattleDetection.isCow}, confidence=${cattleDetection.confidence}%`);
+    console.log(`[CattleCheck] Predictions: ${JSON.stringify(cattleDetection.predictions)}`);
+
+    if (!cattleDetection.isCow) {
+      // No cow detected — reject immediately.
+      // Do NOT proceed to disease detection, Groq, or MongoDB.
+      console.log(`[CattleCheck] REJECTED: No cow detected in image. Returning HTTP 400.`);
+
+      // Clean up the uploaded file
+      try {
+        fs.unlinkSync(imagePath);
+      } catch (cleanupError) {
+        console.warn('Failed to clean up uploaded file:', cleanupError.message);
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: 'Please upload a cow image.',
+      });
+    }
+
+    // --- Step 3: Cow confirmed — proceed with disease detection pipeline ---
+    console.log(`[CattleCheck] ACCEPTED: Cow detected. Proceeding to disease detection.`);
+
+    // Run the existing Roboflow disease classification workflow
     const yoloResult = await detectDiseases(imagePath, req.file.originalname);
 
+    // --- Step 4: Groq analysis (only if symptoms were provided) ---
     let combinedAnalysis = null;
     if (symptoms && symptoms.trim()) {
       let cow = null;
@@ -285,6 +336,7 @@ const aiDetectImage = async (req, res, next) => {
       const enhancedSymptoms = `${symptoms.trim()}${yoloFindings}`;
       const analysis = await analyzeSymptoms(cow, enhancedSymptoms, healthRecords, vaccinations);
 
+      // --- Step 5: Save diagnosis to MongoDB (if cow selected) ---
       let savedDiagnosis = null;
       if (cow && analysis.data.possibleDiseases?.length > 0) {
         const topDisease = analysis.data.possibleDiseases[0];
@@ -353,12 +405,14 @@ const aiDetectImage = async (req, res, next) => {
       };
     }
 
+    // --- Step 6: Clean up uploaded file ---
     try {
       fs.unlinkSync(imagePath);
     } catch (cleanupError) {
       console.warn('Failed to clean up uploaded file:', cleanupError.message);
     }
 
+    // --- Step 7: Return standard response ---
     res.json({
       success: true,
       data: {
@@ -376,6 +430,7 @@ const aiDetectImage = async (req, res, next) => {
       },
     });
   } catch (error) {
+    // Clean up on error
     if (req.file && req.file.path) {
       try {
         fs.unlinkSync(req.file.path);
@@ -383,7 +438,7 @@ const aiDetectImage = async (req, res, next) => {
         // Ignore cleanup errors
       }
     }
-    
+
     res.status(500).json({
       success: false,
       message: error.message || 'Image analysis failed',

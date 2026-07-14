@@ -1,7 +1,35 @@
+# Node
 node_modules/
+
+# Environment
 .env
+ai-service/.env
+client/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# AI Models
+*.pt
+ai-service/weights/
+ai-service/models/
+
+# Uploads
 server/uploads/*
 !server/uploads/.gitkeep
+
+# Test files
+test-*.jpg
+test-*.js
+server/test-*.jpg
+server/test-*.js
+test-image-diagnosis.js
+test-roboflow-workflow.js
+
+# Build
 dist/
 .DS_Store
 *.log

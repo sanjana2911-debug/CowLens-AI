@@ -1,6 +1,6 @@
 """
-FastAPI inference server for YOLOv11 cow disease detection.
-Provides REST API for image-based disease detection.
+FastAPI inference server for YOLOv11 cow disease detection and cow presence detection.
+Provides REST API for image-based disease detection and cow verification.
 """
 import os
 import io
@@ -18,7 +18,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from predict import load_model, predict_diseases, encode_image_to_bytes
+from predict import load_model, predict_diseases, encode_image_to_bytes, detect_cow_in_image
 
 # Load environment variables
 load_dotenv()
@@ -52,8 +52,8 @@ else:
 
 # Initialize FastAPI
 app = FastAPI(
-    title="CowLens AI - YOLOv11 Disease Detection Service",
-    description="AI-powered cattle disease detection using YOLOv11",
+    title="CowLens AI - YOLOv11 Disease Detection & Cow Verification Service",
+    description="AI-powered cattle disease detection and cow presence verification using YOLOv11",
     version="1.0.0",
 )
 
@@ -145,6 +145,67 @@ async def health_check():
         "service": "cowlens-ai-yolo",
         "model_loaded": model is not None,
     }
+
+
+@app.post("/detect-cow")
+async def detect_cow(file: UploadFile = File(...)):
+    """
+    Upload an image and verify if it contains a cow.
+    Only detects the COCO class 'cow' (class ID 0).
+    Ignores all other objects (person, dog, cat, horse, etc.).
+    
+    Returns:
+        If a cow is detected:
+        {
+            "success": true,
+            "isCow": true,
+            "confidence": 96.4,
+            "detections": []
+        }
+        
+        If no cow is detected:
+        {
+            "success": true,
+            "isCow": false,
+            "message": "Please upload a cow image."
+        }
+    """
+    try:
+        # Validate and read image
+        image_bytes = validate_image(file)
+        logger.info(f"Processing image for cow detection: {file.filename} ({len(image_bytes)} bytes)")
+
+        # Get model and run cow detection
+        yolo_model = get_model()
+        result = detect_cow_in_image(yolo_model, image_bytes)
+
+        if result["is_cow"]:
+            logger.info(
+                f"Cow detected in image: {file.filename} "
+                f"(confidence: {result['confidence']}%)"
+            )
+            return {
+                "success": True,
+                "isCow": True,
+                "confidence": result["confidence"],
+                "detections": result["detections"],
+            }
+        else:
+            logger.info(f"No cow detected in image: {file.filename}")
+            return {
+                "success": True,
+                "isCow": False,
+                "message": "Please upload a cow image.",
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Cow detection failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Cow detection failed: {str(e)}",
+        )
 
 
 @app.post("/predict")
