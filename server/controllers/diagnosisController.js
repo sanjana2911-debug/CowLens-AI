@@ -264,8 +264,23 @@ const aiAnalyzeSymptoms = async (req, res, next) => {
  */
 const aiDetectImage = async (req, res, next) => {
   try {
+    // --- DEBUG: Log full request details for Android troubleshooting ---
+    console.log('========== UPLOAD DEBUG ==========');
+    console.log(`[Debug] req.headers: ${JSON.stringify({
+      'content-type': req.headers['content-type'],
+      'content-length': req.headers['content-length'],
+      host: req.headers.host,
+      origin: req.headers.origin,
+      'user-agent': (req.headers['user-agent'] || '').substring(0, 100),
+      accept: req.headers.accept,
+    }, null, 2)}`);
+    console.log(`[Debug] req.body: ${JSON.stringify(req.body)}`);
+    console.log(`[Debug] req.file: ${JSON.stringify(req.file, null, 2)}`);
+    console.log('===============================');
+
     // --- Step 1: Validate uploaded file ---
     if (!req.file) {
+      console.log(`[Debug] FATAL: req.file is undefined/null. req.files: ${JSON.stringify(req.files)}`);
       res.status(400);
       throw new Error('Please upload a cow image');
     }
@@ -273,6 +288,9 @@ const aiDetectImage = async (req, res, next) => {
     const { symptoms, cowId } = req.body;
     const imagePath = req.file.path;
     const originalName = req.file.originalname;
+
+    console.log(`[Debug] imagePath: "${imagePath}", originalName: "${originalName}"`);
+    console.log(`[Debug] File exists on disk: ${require('fs').existsSync(imagePath)}`);
 
     // --- Step 2: Run Roboflow Cattle Detection ---
     // This is the ONLY gatekeeper. If no cow is detected, reject immediately.
@@ -438,6 +456,20 @@ const aiDetectImage = async (req, res, next) => {
         // Ignore cleanup errors
       }
     }
+
+    console.error('========== UPLOAD ERROR DEBUG ==========');
+    console.error(`[Error] message: ${error.message}`);
+    console.error(`[Error] code: ${error.code}`);
+    console.error(`[Error] name: ${error.name}`);
+    console.error(`[Error] stack: ${error.stack}`);
+    if (error.response) {
+      console.error(`[Error] response.status: ${error.response.status}`);
+      console.error(`[Error] response.data: ${JSON.stringify(error.response.data)}`);
+    }
+    if (error.cause) {
+      console.error(`[Error] cause: ${error.cause}`);
+    }
+    console.error('========================================');
 
     res.status(500).json({
       success: false,

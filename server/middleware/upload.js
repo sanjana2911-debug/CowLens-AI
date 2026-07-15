@@ -21,22 +21,30 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
+  const ext = path.extname(file.originalname).toLowerCase();
+  const mimetype = file.mimetype.toLowerCase();
   const allowedTypes = /jpeg|jpg|png|gif|webp/;
-  const extname = allowedTypes.test(
-    path.extname(file.originalname).toLowerCase()
-  );
-  const mimetype = allowedTypes.test(file.mimetype);
 
-  if (extname && mimetype) {
+  const extname = allowedTypes.test(ext.replace('.', ''));
+  const mimetypeOk = allowedTypes.test(mimetype);
+
+  console.log(`[Upload] File received — name: "${file.originalname}", mimetype: "${file.mimetype}", ext: "${ext}", size: ${file.size || 'unknown'} bytes`);
+
+  if (extname && mimetypeOk) {
+    console.log(`[Upload] File accepted — extension "${ext}" matches, mimetype "${file.mimetype}" matches.`);
     cb(null, true);
   } else {
-    cb(new Error('Only images are allowed'), false);
+    const reason = [];
+    if (!extname) reason.push(`extension "${ext}" not in allowed set (jpeg, jpg, png, gif, webp)`);
+    if (!mimetypeOk) reason.push(`mimetype "${file.mimetype}" not in allowed set (jpeg, jpg, png, gif, webp)`);
+    console.log(`[Upload] File REJECTED — ${reason.join('; ')}`);
+    cb(new Error(`Only images are allowed. Reason: ${reason.join('; ')}`), false);
   }
 };
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter,
 });
 

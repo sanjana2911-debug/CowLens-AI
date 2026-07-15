@@ -99,15 +99,50 @@ const AIDiagnosis = () => {
   const handleImageDetection = async () => {
     setError(''); setLoading(true); setYoloLoading(true); setAnalysis(null); setYoloResult(null);
     try {
+      // --- DEBUG: Log form data before sending ---
+      console.log('========== ANDROID UPLOAD DEBUG ==========');
+      console.log('[Debug] selectedImage:', selectedImage);
+      if (selectedImage) {
+        console.log('[Debug] File name:', selectedImage.name);
+        console.log('[Debug] File type:', selectedImage.type);
+        console.log('[Debug] File size:', selectedImage.size, 'bytes');
+        console.log('[Debug] File lastModified:', selectedImage.lastModified);
+      }
+
       const formData = new FormData();
       formData.append('image', selectedImage);
       if (symptoms.trim()) formData.append('symptoms', symptoms.trim());
       if (selectedCow) formData.append('cowId', selectedCow);
+
+      // Log FormData entries
+      console.log('[Debug] FormData entries:');
+      for (const pair of formData.entries()) {
+        if (pair[1] instanceof File) {
+          console.log(`  ${pair[0]}: File(name="${pair[1].name}", type="${pair[1].type}", size=${pair[1].size})`);
+        } else {
+          console.log(`  ${pair[0]}: "${pair[1]}"`);
+        }
+      }
+      console.log('=========================================');
+
       const res = await diagnosisAPI.aiDetectImage(formData);
       const data = res.data.data;
       setYoloResult(data.yoloDetection);
       if (data.combinedAnalysis) setAnalysis(data.combinedAnalysis);
     } catch (err) {
+      console.error('========== ANDROID UPLOAD ERROR ==========');
+      console.error(err);
+      console.error('[Error] response:', err.response);
+      console.error('[Error] request:', err.request);
+      console.error('=========================================');
+
+      alert(JSON.stringify({
+        status: err.response?.status,
+        message: err.message,
+        data: err.response?.data,
+        code: err.code
+      }, null, 2));
+
       setError(err.response?.data?.message || err.response?.data?.error || 'Image analysis failed. Please try again.');
       toast.error('Image analysis failed');
     } finally { setLoading(false); setYoloLoading(false); }
