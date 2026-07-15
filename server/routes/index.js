@@ -38,6 +38,7 @@ const {
   getUnreadCount,
 } = require('../controllers/notificationController');
 const { protect } = require('../middleware/auth');
+const multer = require('multer');
 const upload = require('../middleware/upload');
 const {
   createHealthRecordValidation,
@@ -68,7 +69,32 @@ router.post('/cows/:cowId/diagnoses', protect, createDiagnosisValidation, create
 router.post('/diagnoses/ai-analyze', protect, aiAnalyzeSymptoms);
 
 // YOLO image-based disease detection endpoint
-router.post('/diagnoses/ai-detect-image', protect, upload.single('image'), aiDetectImage);
+// Log request BEFORE multer runs so we can debug Android uploads
+router.post('/diagnoses/ai-detect-image', protect, (req, res, next) => {
+  console.log('========== MULTER PRE-FLIGHT ==========');
+  console.log(`[Multer] Content-Type: ${req.headers['content-type']}`);
+  console.log(`[Multer] Content-Length: ${req.headers['content-length']}`);
+  console.log(`[Multer] User-Agent: ${(req.headers['user-agent'] || '').substring(0, 120)}`);
+  console.log(`[Multer] req.body BEFORE multer:`, JSON.stringify(req.body));
+  console.log(`[Multer] req.files BEFORE multer:`, req.files);
+  console.log('=======================================');
+  next();
+}, (req, res, next) => {
+  upload.single('image')(req, res, (err) => {
+    if (err) {
+      // Multer error (file too large, wrong type, etc.)
+      const multerError = err instanceof multer.MulterError ? err : err;
+      console.log(`[Multer] ERROR: ${multerError.message} (code: ${multerError.code || 'UNKNOWN'})`);
+
+      return res.status(400).json({
+        success: false,
+        message: multerError.message || 'File upload failed',
+        code: multerError.code || 'UPLOAD_ERROR',
+      });
+    }
+    next();
+  });
+}, aiDetectImage);
 
 // Direct health routes
 router.get('/health/:id', protect, getHealthRecord);
