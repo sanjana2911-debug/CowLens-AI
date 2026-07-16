@@ -22,7 +22,7 @@ const storage = multer.diskStorage({
 
 const fileFilter = (req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
-  const mimetype = file.mimetype.toLowerCase();
+  const mimetype = (file.mimetype || '').toLowerCase();
   const allowedTypes = /jpeg|jpg|png|gif|webp/;
 
   const extname = allowedTypes.test(ext.replace('.', ''));
@@ -30,13 +30,15 @@ const fileFilter = (req, file, cb) => {
 
   console.log(`[Upload] File received — name: "${file.originalname}", mimetype: "${file.mimetype}", ext: "${ext}", size: ${file.size || 'unknown'} bytes`);
 
-  if (extname && mimetypeOk) {
-    console.log(`[Upload] File accepted — extension "${ext}" matches, mimetype "${file.mimetype}" matches.`);
+  // FIX: Accept file if EITHER extension OR mimetype matches
+  // Android sometimes sends empty mimetype or "application/octet-stream"
+  if (extname || mimetypeOk) {
+    console.log(`[Upload] File accepted — extension "${ext}" or mimetype "${file.mimetype}" matches.`);
     cb(null, true);
   } else {
     const reason = [];
-    if (!extname) reason.push(`extension "${ext}" not in allowed set (jpeg, jpg, png, gif, webp)`);
-    if (!mimetypeOk) reason.push(`mimetype "${file.mimetype}" not in allowed set (jpeg, jpg, png, gif, webp)`);
+    if (!extname) reason.push(`extension "${ext}" not in allowed set`);
+    if (!mimetypeOk) reason.push(`mimetype "${file.mimetype}" not in allowed set`);
     console.log(`[Upload] File REJECTED — ${reason.join('; ')}`);
     cb(new Error(`Only images are allowed. Reason: ${reason.join('; ')}`), false);
   }

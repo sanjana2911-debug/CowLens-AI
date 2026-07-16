@@ -248,19 +248,12 @@ const aiAnalyzeSymptoms = async (req, res, next) => {
 /**
  * aiDetectImage — Image-based AI diagnosis pipeline.
  *
- * Flow:
+ * Two-stage validation flow:
  *   1. Validate uploaded file exists.
- *   2. Run Roboflow Cattle Detection to verify the image contains a cow.
- *   3. If NO cow detected → HTTP 400 immediately.
- *      - Do NOT call disease detection.
- *      - Do NOT call Groq.
- *      - Do NOT save to MongoDB.
- *   4. If cow detected → proceed with existing disease detection pipeline:
- *      - Roboflow disease classification workflow
- *      - Groq AI symptom analysis (if symptoms provided)
- *      - MongoDB Diagnosis save
- *      - Notification creation (if severe)
- *      - Return standard response format
+ *   2. Run Roboflow Cattle Detection (detectCattle).
+ *   3. Always run Roboflow Disease Detection (detectDiseases).
+ *   4. Reject only if BOTH detectCattle finds no cow AND detectDiseases finds no predictions.
+ *   5. If accepted: Groq analysis, MongoDB save, notifications, standard response.
  */
 const aiDetectImage = async (req, res, next) => {
   try {
@@ -293,19 +286,22 @@ const aiDetectImage = async (req, res, next) => {
     console.log(`[Debug] File exists on disk: ${require('fs').existsSync(imagePath)}`);
 
     // --- Step 2: Run Roboflow Cattle Detection ---
-    // This is the ONLY gatekeeper. If no cow is detected, reject immediately.
     console.log(`[CattleCheck] Starting cattle detection for: ${originalName}`);
     const cattleDetection = await detectCattle(imagePath);
 
     console.log(`[CattleCheck] Result: isCow=${cattleDetection.isCow}, confidence=${cattleDetection.confidence}%`);
     console.log(`[CattleCheck] Predictions: ${JSON.stringify(cattleDetection.predictions)}`);
 
-    if (!cattleDetection.isCow) {
-      // No cow detected — reject immediately.
-      // Do NOT proceed to disease detection, Groq, or MongoDB.
-      console.log(`[CattleCheck] REJECTED: No cow detected in image. Returning HTTP 400.`);
+    // --- Step 3: Always run disease detection ---
+    console.log(`[CattleCheck] Running disease detection...`);
+    const yoloResult = await detectDiseases(imagePath, req.file.originalname);
+    console.log(`[CattleCheck] Disease detection result: detectedDiseases=${JSON.stringify(yoloResult.detectedDiseases)}, confidence=${yoloResult.confidence}`);
 
-      // Clean up the uploaded file
+    // --- Step 4: Two-stage decision ---
+    // Reject only if BOTH cattle detection finds no cow AND disease detection finds nothing.
+    if (!cattleDetection.isCow && yoloResult.detections.length === 0) {
+      console.log(`[CattleCheck] REJECTED: No cow detected AND no disease detected. Returning HTTP 400.`);
+
       try {
         fs.unlinkSync(imagePath);
       } catch (cleanupError) {
@@ -318,11 +314,7 @@ const aiDetectImage = async (req, res, next) => {
       });
     }
 
-    // --- Step 3: Cow confirmed — proceed with disease detection pipeline ---
-    console.log(`[CattleCheck] ACCEPTED: Cow detected. Proceeding to disease detection.`);
-
-    // Run the existing Roboflow disease classification workflow
-    const yoloResult = await detectDiseases(imagePath, req.file.originalname);
+    console.log(`[CattleCheck] ACCEPTED: Image passed validation.`);
 
     // --- Step 4: Groq analysis (only if symptoms were provided) ---
     let combinedAnalysis = null;

@@ -7,19 +7,24 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 60000, // 60 second timeout for mobile networks
 });
 
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
-    console.log('[API Request]', config.method.toUpperCase(), config.url, 'Token:', token ? 'Present' : 'MISSING');
+    
+    // CRITICAL FIX: If sending FormData, let axios set Content-Type automatically
+    // This ensures the multipart boundary is properly generated
+    // Android Chrome rejects malformed multipart requests without a boundary
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
+    
     if (token) {
       config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
-      console.log('[API Request] Authorization header set');
-    } else {
-      console.warn('[API Request] No token found in localStorage');
     }
     return config;
   },
@@ -29,13 +34,10 @@ api.interceptors.request.use(
 // Response interceptor to handle errors
 api.interceptors.response.use(
   (response) => {
-    console.log('[API Response]', response.status, response.config.url);
     return response;
   },
   (error) => {
-    console.error('[API Error]', error.response?.status, error.config?.url, error.response?.data);
     if (error.response?.status === 401) {
-      console.warn('[API] Unauthorized - clearing token and redirecting');
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       if (window.location.pathname !== '/login') {
@@ -98,10 +100,10 @@ export const diagnosisAPI = {
   update: (id, data) => api.put(`/diagnoses/${id}`, data),
   delete: (id) => api.delete(`/diagnoses/${id}`),
   aiAnalyze: (data) => api.post('/diagnoses/ai-analyze', data),
-  aiDetectImage: (formData) =>
-    api.post('/diagnoses/ai-detect-image', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }),
+  // FIX: Do NOT set Content-Type manually - let axios handle it
+  // Android Chrome rejects malformed multipart requests without boundary
+  aiDetectImage: (formData, extraConfig = {}) =>
+    api.post('/diagnoses/ai-detect-image', formData, extraConfig),
 };
 
 // Notifications API
